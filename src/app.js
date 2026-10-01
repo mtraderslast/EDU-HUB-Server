@@ -7,7 +7,6 @@ import CourseRoute from "./modules/course/course.route.js";
 import RveiewRoute from "./modules/reviews/review.route.js";
 import BlogRoutes from "./modules/blog/blog.route.js";
 import EnrollmentRoutes from "./modules/enrollment/enrollment.route.js";
-import { keepServerAlive } from "./keepAlive.js";
 
 const createApp = (auth) => {
     const app = express();
@@ -34,8 +33,6 @@ const createApp = (auth) => {
         res.send("M traders server is running successfully");
     });
 
-    const backendUrl = process.env.BETTER_AUTH_URL || "http://localhost:5000";
-    keepServerAlive(backendUrl);
 
     return app;
 }
