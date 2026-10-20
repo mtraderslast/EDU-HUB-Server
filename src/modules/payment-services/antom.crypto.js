@@ -1,17 +1,53 @@
 import crypto from 'crypto';
 
-const formatPem = (pem, type) => {
-    if (!pem) return '';
-    const normalized = pem.replace(/\\n/g, '\n').trim();
-    if (normalized.includes('-----BEGIN')) return normalized;
+const normalizePem = (pem) =>
+    String(pem || '')
+        .replace(/\\n/g, '\n')
+        .replace(/["']/g, '')
+        .trim();
 
-    const wrapped = normalized.match(/.{1,64}/g)?.join('\n') || normalized;
+const wrapPem = (body, type) => {
+    const wrapped = body.match(/.{1,64}/g)?.join('\n') || body;
     return `-----BEGIN ${type}-----\n${wrapped}\n-----END ${type}-----`;
 };
 
-export const formatPrivateKey = (pem) => formatPem(pem, 'RSA PRIVATE KEY');
+const canLoadPrivateKey = (pem) => {
+    try {
+        crypto.createPrivateKey(pem);
+        return true;
+    } catch {
+        return false;
+    }
+};
 
-export const formatPublicKey = (pem) => formatPem(pem, 'PUBLIC KEY');
+export const formatPrivateKey = (pem) => {
+    const normalized = normalizePem(pem);
+    if (!normalized) return '';
+    if (normalized.includes('-----BEGIN PUBLIC KEY-----') || normalized.startsWith('MIIBIjAN')) {
+        throw new Error('ANTOM_PRIVATE_KEY is a public key. Paste the merchant private key (starts with MIIEv).');
+    }
+    if (normalized.includes('-----BEGIN')) {
+        if (!canLoadPrivateKey(normalized)) {
+            throw new Error('ANTOM_PRIVATE_KEY could not be parsed. Check the value in .env.');
+        }
+        return normalized;
+    }
+
+    const pkcs8 = wrapPem(normalized, 'PRIVATE KEY');
+    if (canLoadPrivateKey(pkcs8)) return pkcs8;
+
+    const pkcs1 = wrapPem(normalized, 'RSA PRIVATE KEY');
+    if (canLoadPrivateKey(pkcs1)) return pkcs1;
+
+    throw new Error('ANTOM_PRIVATE_KEY could not be parsed. Check the value in .env.');
+};
+
+export const formatPublicKey = (pem) => {
+    const normalized = normalizePem(pem);
+    if (!normalized) return '';
+    if (normalized.includes('-----BEGIN')) return normalized;
+    return wrapPem(normalized, 'PUBLIC KEY');
+};
 
 export const buildSignContent = (httpMethod, requestPath, clientId, requestTime, body) =>
     `${httpMethod} ${requestPath}\n${clientId}.${requestTime}.${body}`;

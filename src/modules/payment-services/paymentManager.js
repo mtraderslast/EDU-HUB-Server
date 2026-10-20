@@ -116,7 +116,7 @@ export const applyPaymentResult = async ({
     const updated = await Enrollment.findOneAndUpdate(
         { orderId, paymentStatus: { $ne: PAYMENT_STATUS.SUCCESS } },
         { $set: update },
-        { new: true }
+        { returnDocument: 'after' }
     );
 
     return updated || Enrollment.findOne({ orderId });
