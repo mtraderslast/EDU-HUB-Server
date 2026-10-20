@@ -12,10 +12,8 @@ const getClientId = () => process.env.ANTOM_CLIENT_ID;
 const getPrivateKey = () => process.env.ANTOM_PRIVATE_KEY;
 const getPublicKey = () => process.env.ANTOM_PUBLIC_KEY;
 const getBaseUrl = () => (process.env.ANTOM_BASE_URL || '').replace(/\/$/, '');
-const isSandbox = () => String(getClientId() || '').toUpperCase().startsWith('SANDBOX_');
-const apiPrefix = () => (isSandbox() ? '/ams/sandbox/api' : '/ams/api');
-const getCreatePath = () => process.env.ANTOM_API_PATH || `${apiPrefix()}/v1/payments/createPaymentSession`;
-const getInquiryPath = () => process.env.ANTOM_INQUIRY_PATH || `${apiPrefix()}/v1/payments/inquiryPayment`;
+const getCreatePath = () => process.env.ANTOM_API_PATH || '/ams/api/v1/payments/createPaymentSession';
+const getInquiryPath = () => process.env.ANTOM_INQUIRY_PATH || '/ams/api/v1/payments/inquiryPayment';
 
 const FAILED_STATUSES = ['FAIL', 'FAILED', 'CANCELLED', 'CANCELED', 'EXPIRED'];
 
@@ -114,7 +112,6 @@ const createSession = async ({
 
     const result = await callAntom(getCreatePath(), payload);
     const checkoutUrl =
-        result.normalUrl ||
         result.paymentUrl ||
         result.redirectUrl ||
         (typeof result.actionForm === 'string' ? result.actionForm : '') ||
@@ -124,6 +121,10 @@ const createSession = async ({
         console.error('[Antom] createPaymentSession failed:', JSON.stringify(result));
         throw new AppError(502, result?.result?.resultMessage || 'Antom payment session creation failed');
     }
+
+    console.log(
+        `[Antom] session created path=${getCreatePath()} expiry=${result.paymentSessionExpiryTime || 'n/a'} urlHost=${(() => { try { return new URL(checkoutUrl).host; } catch { return 'invalid-url'; } })()}`
+    );
 
     // paymentSessionId is not a paymentId, so it is not stored for inquiry
     return { checkoutUrl, gatewayPaymentId: '', raw: result };
