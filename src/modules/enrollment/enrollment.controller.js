@@ -1,49 +1,71 @@
-import mongoose from "mongoose";
 import AppError from "../../utils/AppError.js";
 import catchAsync from "../../utils/catchAsync.js";
 import Enrollment from "./enrollment.model.js";
+import { syncPendingPayment } from "../payment-services/paymentManager.js";
+import { GATEWAYS, PAYMENT_STATUS } from "../payment-services/constants.js";
+import { DEFAULT_CURRENCY, toMajorAmount } from "../payment-services/config.js";
 
+// Legacy: used by the old Next.js Antom routes (/api/antom-pay, /api/webhook/antom). Remove with them.
 export const createPendingOrder = catchAsync(async (req, res) => {
-    const { orderId, courseId, userEmail, userName, gateway, amount } = req.body;
+    const { orderId, courseId, userEmail, userName, amount } = req.body;
 
-    if (!orderId || !courseId || !userEmail) {
+    const majorAmount = toMajorAmount(amount);
+    if (!orderId || !courseId || !userEmail || !Number.isFinite(majorAmount) || majorAmount <= 0) {
         throw new AppError(400, "Missing required fields to initialize order");
     }
 
-    const existingEnrollment = await Enrollment.findOne({ orderId });
-
-    if (existingEnrollment) {
+    const existing = await Enrollment.findOne({ orderId });
+    if (existing) {
         return res.status(200).json({
             success: true,
             message: "Order already initialized",
-            data: existingEnrollment,
+            data: existing,
         });
     }
 
-    const newEnrollment = await Enrollment.create({
+    const created = await Enrollment.create({
         orderId,
-        courseId,
-        userEmail,
-        userName: userName || 'Guest',
-        gateway: gateway || 'Antom',
-        amount,
-        paymentStatus: 'PENDING',
-        isAccessGranted: false
+        courseId: String(courseId),
+        userEmail: String(userEmail).trim().toLowerCase(),
+        userName: userName || "Guest",
+        gateway: GATEWAYS.ANTOM,
+        amount: majorAmount,
+        currency: DEFAULT_CURRENCY,
+        paymentStatus: PAYMENT_STATUS.PENDING,
+        isAccessGranted: false,
     });
 
     return res.status(201).json({
         success: true,
         message: "Pending order created successfully",
-        data: newEnrollment,
+        data: created,
+    });
+});
+
+// The status sent in the body is ignored; the order is re-checked with Antom.
+export const confirmAntomPaymentLegacy = catchAsync(async (req, res) => {
+    const { orderId } = req.body;
+
+    if (!orderId) {
+        throw new AppError(400, "Missing order id");
+    }
+
+    const enrollment = await Enrollment.findOne({ orderId });
+    if (!enrollment) {
+        throw new AppError(404, "Order not found in database");
+    }
+
+    const updated = await syncPendingPayment(enrollment, { silent: true });
+
+    return res.status(200).json({
+        success: true,
+        message: `Payment status: ${updated.paymentStatus}`,
+        data: updated,
     });
 });
 
 export const confirmPayment = catchAsync(async (req, res) => {
-    const { orderId, proofId, gateway, status } = req.body;
-
-    if (!orderId || !proofId) {
-        throw new AppError(400, "Missing required fields for enrollment confirmation");
-    }
+    const { orderId } = req.params;
 
     const enrollment = await Enrollment.findOne({ orderId });
 
@@ -51,7 +73,7 @@ export const confirmPayment = catchAsync(async (req, res) => {
         throw new AppError(404, "Order not found in database");
     }
 
-    if (enrollment.paymentStatus === 'SUCCESS') {
+    if (enrollment.paymentStatus === PAYMENT_STATUS.SUCCESS) {
         return res.status(200).json({
             success: true,
             message: "Payment already processed and recorded",
@@ -59,23 +81,12 @@ export const confirmPayment = catchAsync(async (req, res) => {
         });
     }
 
-    enrollment.proofId = proofId;
-    if (gateway) enrollment.gateway = gateway;
-
-    if (status === 'FAILED') {
-        enrollment.paymentStatus = 'FAILED';
-        enrollment.isAccessGranted = false;
-    } else {
-        enrollment.paymentStatus = 'SUCCESS';
-        enrollment.isAccessGranted = true;
-    }
-
-    await enrollment.save();
+    const updated = await syncPendingPayment(enrollment);
 
     return res.status(200).json({
         success: true,
-        message: "Payment status updated successfully",
-        data: enrollment,
+        message: `Payment status: ${updated.paymentStatus}`,
+        data: updated,
     });
 });
 
@@ -85,7 +96,7 @@ export const getMyEnrolledCourses = catchAsync(async (req, res) => {
     const enrolledCourses = await Enrollment.aggregate([
         {
             $match: {
-                userEmail: userEmail,
+                userEmail: { $in: [userEmail, String(userEmail).toLowerCase()] },
                 paymentStatus: 'SUCCESS',
                 isAccessGranted: true
             }
@@ -158,7 +169,9 @@ export const getAllEnrollmentsForAdmin = catchAsync(async (req, res) => {
     const matchStage = {};
 
     if (searchQuery) {
-        matchStage.proofId = { $regex: searchQuery, $options: 'i' };
+        const escaped = String(searchQuery).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = { $regex: escaped, $options: 'i' };
+        matchStage.$or = [{ proofId: regex }, { orderId: regex }, { userEmail: regex }];
     }
 
     if (status !== 'ALL') {
@@ -195,7 +208,9 @@ export const getAllEnrollmentsForAdmin = catchAsync(async (req, res) => {
                 proofId: 1,
                 gateway: 1,
                 amount: 1,
+                currency: 1,
                 paymentStatus: 1,
+                failureReason: 1,
                 isAccessGranted: 1,
                 createdAt: 1,
                 "courseDetails.title": 1,
@@ -234,7 +249,7 @@ export const deleteEnrollment = catchAsync(async (req, res) => {
         throw new AppError(404, 'Enrollment not found to delete');
     }
 
-    if (enrollment.status === 'SUCCESS') {
+    if (enrollment.paymentStatus === 'SUCCESS') {
         throw new AppError(400, 'Cannot delete an enrollment with status SUCCESS');
     }
 

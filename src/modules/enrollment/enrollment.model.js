@@ -25,16 +25,28 @@ const enrollmentSchema = new mongoose.Schema(
         },
         gateway: {
             type: String,
-            default: 'Antom'
+            default: ''
+        },
+        gatewayPaymentId: {
+            type: String,
+            default: ''
         },
         amount: {
             type: Number,
             required: true
         },
+        currency: {
+            type: String,
+            default: 'USD'
+        },
         paymentStatus: {
             type: String,
             enum: ['PENDING', 'SUCCESS', 'FAILED'],
             default: 'PENDING'
+        },
+        failureReason: {
+            type: String,
+            default: ''
         },
         isAccessGranted: {
             type: Boolean,
@@ -46,6 +58,8 @@ const enrollmentSchema = new mongoose.Schema(
         versionKey: false
     }
 );
+
+enrollmentSchema.index({ userEmail: 1, courseId: 1, paymentStatus: 1 });
 
 const Enrollment = mongoose.model('Enrollment', enrollmentSchema);
 
