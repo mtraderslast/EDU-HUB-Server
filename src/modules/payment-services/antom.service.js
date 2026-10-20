@@ -95,6 +95,9 @@ const createSession = async ({
             orderAmount: { currency: String(currency), value: amountString },
         },
         availablePaymentMethod: { paymentMethodTypeList: AVAILABLE_PAYMENT_METHODS },
+        allowedPaymentMethodRegions: ['GLOBAL'],
+        merchantRegion: process.env.ANTOM_MERCHANT_REGION || 'HK',
+        locale: 'en_US',
         buyer: {
             referenceBuyerId: customerEmail || `GUEST_${orderId}`,
             ...(customerName && { buyerName: { fullName: customerName } }),
@@ -111,7 +114,6 @@ const createSession = async ({
     const checkoutUrl =
         result.paymentUrl ||
         result.redirectUrl ||
-        result.normalUrl ||
         (typeof result.actionForm === 'string' ? result.actionForm : '') ||
         result.paymentSessionData?.redirectUrl;
 
