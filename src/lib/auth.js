@@ -31,6 +31,10 @@ export const createAuth = (db) => {
         },
 
         advanced: {
+            ipAddress: {
+                ipAddressHeaders: ["x-forwarded-for", "x-real-ip"],
+                disableIpTracking: true,
+            },
             defaultCookieAttributes: {
                 sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
                 secure: process.env.NODE_ENV === "production" ? true : false,
