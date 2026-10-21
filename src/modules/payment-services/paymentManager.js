@@ -54,8 +54,6 @@ export const createGatewaySession = async (gateway, paymentData) => {
         checkoutUrl: session.checkoutUrl,
         gateway: gateway.name,
         gatewayPaymentId: session.gatewayPaymentId || '',
-        paymentSessionData: session.paymentSessionData || '',
-        environment: session.environment || '',
         raw: session.raw,
     };
 };
