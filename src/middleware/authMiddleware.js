@@ -1,7 +1,14 @@
 import { fromNodeHeaders } from "better-auth/node";
 
+const hasSessionCookie = (req) =>
+    Boolean(req.headers.cookie && /(?:^|;\s*)(?:__Secure-)?better-auth\.session_token=/.test(req.headers.cookie));
+
 export const optionalAuth = async (req, res, next) => {
     try {
+        if (!hasSessionCookie(req)) {
+            return next();
+        }
+
         const auth = req.app.get("auth");
 
         if (auth) {
