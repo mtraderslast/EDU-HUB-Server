@@ -164,7 +164,7 @@ await test('initiate (ANTOM): order + signed session request', async () => {
     assert.equal(sent.paymentAmount.value, '4950');
     assert.equal(sent.paymentRequestId, antomOrder);
     assert.equal(sent.paymentNotifyUrl, 'https://server.example.com/api/payments/webhook/antom');
-    assert.equal(sent.paymentRedirectUrl, `http://localhost:3000/payment-return?orderId=${antomOrder}`);
+    assert.equal(sent.paymentRedirectUrl, 'http://localhost:3000/payment-return');
 
     // our request signature must verify with the matching public key
     const { parseSignatureHeader, verifyAntomSignature } = await import('../src/modules/payment-services/antom.crypto.js');
@@ -221,8 +221,8 @@ await test('initiate (CENTIWISE): form body + control hash', async () => {
     assert.equal(f.amount, '20.00');
     assert.equal(f.control, sha1(`107334${cwOrder}2000cw@example.comAAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE`));
     assert.equal(f.server_callback_url, 'https://server.example.com/api/payments/webhook/centiwise');
-    assert.equal(f.redirect_success_url, `http://localhost:3000/payment-success?orderId=${cwOrder}`);
-    assert.equal(f.redirect_fail_url, `http://localhost:3000/payment-failed?orderId=${cwOrder}`);
+    assert.equal(f.redirect_success_url, 'http://localhost:3000/payment-success');
+    assert.equal(f.redirect_fail_url, 'http://localhost:3000/payment-failed');
 });
 
 await test('Centiwise callback with bad control -> 401', async () => {

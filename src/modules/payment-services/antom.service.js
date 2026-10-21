@@ -116,7 +116,7 @@ const createSession = async ({
         },
         settlementStrategy: { settlementCurrency: String(currency) },
         env: { terminalType: 'WEB' },
-        paymentRedirectUrl: getPaymentReturnUrl(orderId),
+        paymentRedirectUrl: getPaymentReturnUrl(),
         paymentNotifyUrl: getWebhookUrl(GATEWAYS.ANTOM),
         passThroughInfo: JSON.stringify({ courseId, customerEmail, customerName }),
     };

@@ -8,14 +8,11 @@ export const getFrontendUrl = () =>
 export const getServerUrl = () =>
     stripTrailingSlash(process.env.SERVER_BASE_URL || `http://localhost:${process.env.PORT || 5000}`);
 
-export const getPaymentReturnUrl = (orderId) =>
-    `${getFrontendUrl()}/payment-return?orderId=${encodeURIComponent(orderId)}`;
+export const getPaymentReturnUrl = () => `${getFrontendUrl()}/payment-return`;
 
-export const getPaymentSuccessUrl = (orderId) =>
-    `${getFrontendUrl()}/payment-success?orderId=${encodeURIComponent(orderId)}`;
+export const getPaymentSuccessUrl = () => `${getFrontendUrl()}/payment-success`;
 
-export const getPaymentFailUrl = (orderId) =>
-    `${getFrontendUrl()}/payment-failed?orderId=${encodeURIComponent(orderId)}`;
+export const getPaymentFailUrl = () => `${getFrontendUrl()}/payment-failed`;
 
 export const getWebhookUrl = (gatewayName) =>
     `${getServerUrl()}/api/payments/webhook/${String(gatewayName).toLowerCase()}`;
