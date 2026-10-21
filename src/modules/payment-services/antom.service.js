@@ -11,8 +11,12 @@ import {
 const getClientId = () => process.env.ANTOM_CLIENT_ID;
 const getPrivateKey = () => process.env.ANTOM_PRIVATE_KEY;
 const getPublicKey = () => process.env.ANTOM_PUBLIC_KEY;
-const getBaseUrl = () => (process.env.ANTOM_BASE_URL || '').replace(/\/$/, '');
 const isSandboxClient = () => String(getClientId() || '').toUpperCase().startsWith('SANDBOX_');
+
+const getOrigin = () =>
+    (process.env.ANTOM_BASE_URL || '')
+        .replace(/\/$/, '')
+        .replace(/\/ams\/(sandbox\/)?api$/i, '');
 
 const getCreatePath = () =>
     process.env.ANTOM_API_PATH ||
@@ -28,14 +32,7 @@ const getInquiryPath = () =>
 
 const FAILED_STATUSES = ['FAIL', 'FAILED', 'CANCELLED', 'CANCELED', 'EXPIRED'];
 
-const AVAILABLE_PAYMENT_METHODS = [
-    { paymentMethodType: 'CARD' },
-    { paymentMethodType: 'GOOGLEPAY', expressCheckout: false },
-    { paymentMethodType: 'APPLEPAY', expressCheckout: false },
-    { paymentMethodType: 'ALIPAY_HK' },
-];
-
-const isConfigured = () => Boolean(getBaseUrl() && getClientId() && getPrivateKey());
+const isConfigured = () => Boolean(getOrigin() && getClientId() && getPrivateKey());
 
 const mapAntomStatus = (payload = {}) => {
     const paymentStatus = String(payload.paymentStatus || payload.captureStatus || '').toUpperCase();
@@ -64,7 +61,7 @@ const callAntom = async (requestPath, payload) => {
     const jsonBody = JSON.stringify(payload);
     const signature = generateAntomSignature('POST', requestPath, clientId, requestTime, jsonBody, getPrivateKey());
 
-    const response = await fetch(`${getBaseUrl()}${requestPath}`, {
+    const response = await fetch(`${getOrigin()}${requestPath}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json; charset=UTF-8',
@@ -93,32 +90,31 @@ const createSession = async ({
     customerName,
 }) => {
     const amountString = String(toMinorUnits(amount));
+    const merchantRegion = String(process.env.ANTOM_MERCHANT_REGION || '').trim();
 
     const payload = {
         productCode: 'CASHIER_PAYMENT',
         productScene: 'CHECKOUT_PAYMENT',
         paymentRequestId: orderId,
-        is3DSAuthentication: true,
         paymentAmount: { currency: String(currency), value: amountString },
         order: {
             referenceOrderId: String(courseId || orderId),
             orderDescription: String(title || 'Course Purchase'),
             orderAmount: { currency: String(currency), value: amountString },
+            buyer: {
+                referenceBuyerId: customerEmail || `GUEST_${orderId}`,
+                ...(customerEmail && { buyerEmail: customerEmail }),
+                ...(customerName && { buyerName: { fullName: customerName } }),
+            },
         },
-        availablePaymentMethod: { paymentMethodTypeList: AVAILABLE_PAYMENT_METHODS },
+        availablePaymentMethod: { paymentMethodTypeList: [{ paymentMethodType: 'CARD' }] },
         allowedPaymentMethodRegions: ['GLOBAL'],
-        merchantRegion: process.env.ANTOM_MERCHANT_REGION || 'HK',
         locale: 'en_US',
-        buyer: {
-            referenceBuyerId: customerEmail || `GUEST_${orderId}`,
-            ...(customerName && { buyerName: { fullName: customerName } }),
-            ...(customerEmail && { buyerEmail: customerEmail }),
-        },
         settlementStrategy: { settlementCurrency: String(currency) },
         env: { terminalType: 'WEB' },
         paymentRedirectUrl: getPaymentReturnUrl(),
         paymentNotifyUrl: getWebhookUrl(GATEWAYS.ANTOM),
-        passThroughInfo: JSON.stringify({ courseId, customerEmail, customerName }),
+        ...(merchantRegion && { merchantRegion }),
     };
 
     const result = await callAntom(getCreatePath(), payload);
@@ -139,13 +135,7 @@ const createSession = async ({
     );
 
     // paymentSessionId is not a paymentId, so it is not stored for inquiry
-    return {
-        checkoutUrl,
-        gatewayPaymentId: '',
-        paymentSessionData: result.paymentSessionData || '',
-        environment: isSandboxClient() ? 'sandbox' : 'prod',
-        raw: result,
-    };
+    return { checkoutUrl, gatewayPaymentId: '', raw: result };
 };
 
 const inquireStatus = async ({ orderId, gatewayPaymentId }) => {
