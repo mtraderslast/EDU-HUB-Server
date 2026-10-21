@@ -11,6 +11,12 @@ export const getServerUrl = () =>
 export const getPaymentReturnUrl = (orderId) =>
     `${getFrontendUrl()}/payment-return?orderId=${encodeURIComponent(orderId)}`;
 
+export const getPaymentSuccessUrl = (orderId) =>
+    `${getFrontendUrl()}/payment-success?orderId=${encodeURIComponent(orderId)}`;
+
+export const getPaymentFailUrl = (orderId) =>
+    `${getFrontendUrl()}/payment-failed?orderId=${encodeURIComponent(orderId)}`;
+
 export const getWebhookUrl = (gatewayName) =>
     `${getServerUrl()}/api/payments/webhook/${String(gatewayName).toLowerCase()}`;
 

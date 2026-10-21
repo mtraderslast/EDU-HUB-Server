@@ -4,7 +4,8 @@ import { GATEWAYS, PAYMENT_STATUS } from './constants.js';
 import {
     DEFAULT_CURRENCY,
     getFrontendUrl,
-    getPaymentReturnUrl,
+    getPaymentFailUrl,
+    getPaymentSuccessUrl,
     getPublicWebhookUrl,
     splitName,
     toMajorAmount,
@@ -128,8 +129,6 @@ const createSession = async ({
         `${getEndpointId()}${orderId}${toMinorUnits(majorAmount)}${customerEmail}${getMerchantControl()}`
     );
 
-    const returnUrl = getPaymentReturnUrl(orderId);
-
     const fields = {
         client_orderid: orderId,
         order_desc: String(title || 'Course Payment').slice(0, 1000),
@@ -146,8 +145,8 @@ const createSession = async ({
         ipaddress: ipAddress || '127.0.0.1',
         site_url: getFrontendUrl().slice(0, 100),
         control,
-        redirect_success_url: returnUrl,
-        redirect_fail_url: returnUrl,
+        redirect_success_url: getPaymentSuccessUrl(orderId),
+        redirect_fail_url: getPaymentFailUrl(orderId),
     };
 
     const callbackUrl = getPublicWebhookUrl(GATEWAYS.CENTIWISE);
