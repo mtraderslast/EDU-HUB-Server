@@ -12,8 +12,19 @@ const getClientId = () => process.env.ANTOM_CLIENT_ID;
 const getPrivateKey = () => process.env.ANTOM_PRIVATE_KEY;
 const getPublicKey = () => process.env.ANTOM_PUBLIC_KEY;
 const getBaseUrl = () => (process.env.ANTOM_BASE_URL || '').replace(/\/$/, '');
-const getCreatePath = () => process.env.ANTOM_API_PATH || '/ams/api/v1/payments/createPaymentSession';
-const getInquiryPath = () => process.env.ANTOM_INQUIRY_PATH || '/ams/api/v1/payments/inquiryPayment';
+const isSandboxClient = () => String(getClientId() || '').toUpperCase().startsWith('SANDBOX_');
+
+const getCreatePath = () =>
+    process.env.ANTOM_API_PATH ||
+    (isSandboxClient()
+        ? '/ams/sandbox/api/v1/payments/createPaymentSession'
+        : '/ams/api/v1/payments/createPaymentSession');
+
+const getInquiryPath = () =>
+    process.env.ANTOM_INQUIRY_PATH ||
+    (isSandboxClient()
+        ? '/ams/sandbox/api/v1/payments/inquiryPayment'
+        : '/ams/api/v1/payments/inquiryPayment');
 
 const FAILED_STATUSES = ['FAIL', 'FAILED', 'CANCELLED', 'CANCELED', 'EXPIRED'];
 
@@ -112,6 +123,7 @@ const createSession = async ({
 
     const result = await callAntom(getCreatePath(), payload);
     const checkoutUrl =
+        result.normalUrl ||
         result.paymentUrl ||
         result.redirectUrl ||
         (typeof result.actionForm === 'string' ? result.actionForm : '') ||
