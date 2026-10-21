@@ -153,7 +153,7 @@ export const initiatePayment = catchAsync(async (req, res) => {
         enrollment.gatewayPaymentId = session.gatewayPaymentId;
         await enrollment.save();
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             checkoutUrl: session.checkoutUrl,
             orderId,

@@ -20,11 +20,16 @@ import {
 
 const ACCEPT_HEADER = 'application/vnd.pay+json';
 
-const getBaseUrl = () => (process.env.CENTIWISE_BASE_URL || 'https://gate.centiwise.com').replace(/\/$/, '');
-const getEndpointId = () => process.env.CENTIWISE_ENDPOINT_ID;
-const getLogin = () => process.env.CENTIWISE_LOGIN;
+const getEndpointId = () => String(process.env.CENTIWISE_ENDPOINT_ID || '').trim();
+const getLogin = () => String(process.env.CENTIWISE_LOGIN || '').trim();
+const getBaseUrl = () => {
+    const explicit = (process.env.CENTIWISE_BASE_URL || '').replace(/\/$/, '');
+    if (explicit) return explicit;
+    const sandboxLogin = getLogin().toLowerCase().includes('sand');
+    return sandboxLogin ? 'https://sandbox.centiwise.com' : 'https://gate.centiwise.com';
+};
 const getMerchantControl = () =>
-    process.env.CENTIWISE_MERCHANT_CONTROL || process.env.CENTIWISE_API_KEY;
+    String(process.env.CENTIWISE_MERCHANT_CONTROL || process.env.CENTIWISE_API_KEY || '').trim();
 
 const sha1Hex = (value) => crypto.createHash('sha1').update(String(value), 'utf8').digest('hex');
 
