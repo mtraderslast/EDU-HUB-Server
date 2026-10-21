@@ -139,7 +139,13 @@ const createSession = async ({
     );
 
     // paymentSessionId is not a paymentId, so it is not stored for inquiry
-    return { checkoutUrl, gatewayPaymentId: '', raw: result };
+    return {
+        checkoutUrl,
+        gatewayPaymentId: '',
+        paymentSessionData: result.paymentSessionData || '',
+        environment: isSandboxClient() ? 'sandbox' : 'prod',
+        raw: result,
+    };
 };
 
 const inquireStatus = async ({ orderId, gatewayPaymentId }) => {

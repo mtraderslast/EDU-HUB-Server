@@ -156,6 +156,8 @@ export const initiatePayment = catchAsync(async (req, res) => {
         return res.status(200).json({
             success: true,
             checkoutUrl: session.checkoutUrl,
+            paymentSessionData: session.paymentSessionData || '',
+            environment: session.environment || '',
             orderId,
             gateway: session.gateway,
         });
