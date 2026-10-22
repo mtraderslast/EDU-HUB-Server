@@ -145,8 +145,8 @@ const createSession = async ({
         ipaddress: ipAddress || '127.0.0.1',
         site_url: getFrontendUrl().slice(0, 100),
         control,
-        redirect_success_url: getPaymentSuccessUrl(),
-        redirect_fail_url: getPaymentFailUrl(),
+        redirect_success_url: `${getPaymentSuccessUrl()}?orderId=${encodeURIComponent(orderId)}`,
+        redirect_fail_url: `${getPaymentFailUrl()}?orderId=${encodeURIComponent(orderId)}`,
     };
 
     const callbackUrl = getPublicWebhookUrl(GATEWAYS.CENTIWISE);

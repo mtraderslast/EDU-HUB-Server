@@ -21,6 +21,16 @@ registerGateway(centiwiseGateway);
 
 const AMOUNT_TOLERANCE = 0.01;
 
+const toComparableAmount = (gatewayAmount, orderAmount) => {
+    if (!Number.isFinite(gatewayAmount)) return undefined;
+    if (Math.abs(gatewayAmount - orderAmount) <= AMOUNT_TOLERANCE) return gatewayAmount;
+
+    const asMajor = gatewayAmount / 100;
+    if (Math.abs(asMajor - orderAmount) <= AMOUNT_TOLERANCE) return asMajor;
+
+    return gatewayAmount;
+};
+
 export const getOrCreateGatewayConfig = async () => {
     let config = await PaymentGatewayConfig.findOne();
     if (!config) {
@@ -94,10 +104,12 @@ export const applyPaymentResult = async ({
         return enrollment;
     }
 
+    const comparableAmount = toComparableAmount(amount, enrollment.amount);
+
     if (
         status === PAYMENT_STATUS.SUCCESS &&
-        Number.isFinite(amount) &&
-        Math.abs(amount - enrollment.amount) > AMOUNT_TOLERANCE
+        Number.isFinite(comparableAmount) &&
+        Math.abs(comparableAmount - enrollment.amount) > AMOUNT_TOLERANCE
     ) {
         console.error(
             `[Payment] Amount mismatch for ${orderId}: gateway=${amount}, order=${enrollment.amount}; access NOT granted`
