@@ -139,7 +139,8 @@ export const getMyEnrolledCourses = catchAsync(async (req, res) => {
                 "courseDetails.level": 1,
                 "courseDetails.whatYouWillLearn": 1,
                 "courseDetails.certificateProvided": 1,
-                "courseDetails.ratingsAverage": 1
+                "courseDetails.ratingsAverage": 1,
+                "courseDetails.videoUrl": 1
             }
         }
     ]);

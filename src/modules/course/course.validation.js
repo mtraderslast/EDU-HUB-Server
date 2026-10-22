@@ -1,5 +1,51 @@
 import { z } from 'zod';
 
+const YOUTUBE_HOSTS = new Set([
+    'youtube.com',
+    'www.youtube.com',
+    'm.youtube.com',
+    'youtu.be',
+    'www.youtu.be',
+    'youtube-nocookie.com',
+    'www.youtube-nocookie.com'
+]);
+
+const isYouTubeUrl = (value) => {
+    try {
+        const parsed = new URL(value);
+        const host = parsed.hostname.toLowerCase();
+
+        if (!YOUTUBE_HOSTS.has(host)) {
+            return false;
+        }
+
+        const normalizedHost = host.replace(/^www\./, '');
+        const path = parsed.pathname;
+
+        if (normalizedHost === 'youtu.be') {
+            return path.replace(/^\//, '').length > 0;
+        }
+
+        return (
+            parsed.searchParams.has('v') ||
+            path.startsWith('/embed/') ||
+            path.startsWith('/live/') ||
+            path.startsWith('/shorts/') ||
+            path.startsWith('/watch')
+        );
+    } catch {
+        return false;
+    }
+};
+
+const videoUrlSchema = z
+    .string({
+        required_error: 'YouTube video URL is required'
+    })
+    .trim()
+    .url('Please provide a valid video URL')
+    .refine(isYouTubeUrl, 'Please provide a valid YouTube video URL');
+
 export const createCourseZodSchema = z.object({
     title: z
         .string({
@@ -39,6 +85,8 @@ export const createCourseZodSchema = z.object({
             required_error: 'Course thumbnail image URL is required'
         })
         .url('Please provide a valid image URL'),
+
+    videoUrl: videoUrlSchema,
 
     price: z
         .number({
@@ -82,3 +130,5 @@ export const createCourseZodSchema = z.object({
         .default(0)
         .optional()
 });
+
+export const updateCourseZodSchema = createCourseZodSchema.partial();

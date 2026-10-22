@@ -5,8 +5,8 @@ import {
     createPendingOrder,
     deleteEnrollment,
     getAllEnrollmentsForAdmin,
-    getMyEnrolledCourses,
 } from "./enrollment.controller.js";
+import { getMyCourses } from "../course/course.controller.js";
 import { verifyToken } from "../../middleware/authMiddleware.js";
 import protectRoute from "../../middleware/protectRoute.js";
 import { ROLES } from "../../utils/roles.js";
@@ -17,7 +17,7 @@ router.post('/create-pending', createPendingOrder);
 router.post('/confirm-antom-payment', confirmAntomPaymentLegacy);
 
 router.get('/user-enrollment', verifyToken, protectRoute(ROLES.ADMIN), getAllEnrollmentsForAdmin);
-router.get('/my-courses', verifyToken, getMyEnrolledCourses);
+router.get('/my-courses', verifyToken, getMyCourses);
 router.post('/verify/:orderId', verifyToken, protectRoute(ROLES.ADMIN), confirmPayment);
 router.delete("/:id", verifyToken, protectRoute(ROLES.ADMIN), deleteEnrollment);
 
