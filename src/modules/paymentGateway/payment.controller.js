@@ -87,15 +87,6 @@ export const initiatePayment = catchAsync(async (req, res) => {
         throw new AppError(404, 'Course not found');
     }
 
-    const alreadyEnrolled = await Enrollment.exists({
-        userEmail,
-        courseId: String(course._id),
-        paymentStatus: PAYMENT_STATUS.SUCCESS,
-    });
-    if (alreadyEnrolled) {
-        throw new AppError(409, 'You are already enrolled in this course');
-    }
-
     const orderId = `ORDER_${crypto.randomUUID()}`;
     const userName = String(customerName || req.user?.name || 'Guest').trim() || 'Guest';
     const isFreeCourse = Number(course.price) <= 0 && !hasValue(requestedAmount);

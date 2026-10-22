@@ -36,6 +36,11 @@ const courseSchema = new mongoose.Schema(
             type: String,
             required: [true, 'Course thumbnail image URL is required']
         },
+        videoUrl: {
+            type: String,
+            required: [true, 'YouTube video URL is required'],
+            trim: true
+        },
         price: {
             type: Number,
             required: [true, 'Price is required'],

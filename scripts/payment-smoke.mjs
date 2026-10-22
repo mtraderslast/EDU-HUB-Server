@@ -163,8 +163,18 @@ await test('initiate (ANTOM): order + signed session request', async () => {
     const sent = JSON.parse(call.init.body);
     assert.equal(sent.paymentAmount.value, '4950');
     assert.equal(sent.paymentRequestId, antomOrder);
+    assert.equal(sent.productCode, 'CASHIER_PAYMENT');
+    assert.equal(sent.productScene, 'CHECKOUT_PAYMENT');
+    assert.equal(sent.is3DSAuthentication, true);
+    assert.equal(sent.buyer.buyerEmail, 'student@example.com');
+    assert.equal(sent.order.buyer.buyerEmail, 'student@example.com');
+    assert.deepEqual(
+        sent.availablePaymentMethod.paymentMethodTypeList.map((m) => m.paymentMethodType),
+        ['CARD', 'GOOGLEPAY', 'APPLEPAY', 'ALIPAY_HK']
+    );
     assert.equal(sent.paymentNotifyUrl, 'https://server.example.com/api/payments/webhook/antom');
-    assert.equal(sent.paymentRedirectUrl, 'http://localhost:3000/payment-return');
+    assert.equal(sent.paymentRedirectUrl, 'http://localhost:3000/api/payment-return');
+    assert.match(call.url, /\/ams\/api\/v1\/payments\/createPaymentSession$/);
 
     // our request signature must verify with the matching public key
     const { parseSignatureHeader, verifyAntomSignature } = await import('../src/modules/payment-services/antom.crypto.js');
@@ -199,9 +209,13 @@ await test('Antom webhook, valid signature + amount -> SUCCESS + ack', async () 
     assert.equal(doc.paymentStatus, 'SUCCESS'); assert.equal(doc.isAccessGranted, true); assert.equal(doc.proofId, 'P1');
 });
 
-await test('already enrolled -> 409', async () => {
-    const res = await post('/api/payments/initiate', { courseId: COURSE_ID, customerEmail: 'student@example.com' });
-    assert.equal(res.status, 409);
+await test('already enrolled user can buy the same course again', async () => {
+    gatewayReply = () => ({ normalUrl: 'https://antom.example.com/pay/again', result: { resultStatus: 'A' } });
+    const res = await post('/api/payments/initiate', { courseId: COURSE_ID, customerEmail: 'student@example.com', amount: 10 });
+    const data = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(data));
+    assert.ok(data.checkoutUrl);
+    assert.notEqual(data.orderId, antomOrder);
 });
 
 let cwOrder;

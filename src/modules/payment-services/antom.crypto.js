@@ -1,5 +1,10 @@
 import crypto from 'crypto';
 
+/*
+ * RSA-SHA256 request signing used by the live Next.js /api/antom-pay route.
+ * String to sign: `${httpMethod} ${requestPath}\n${clientId}.${requestTime}.${body}`
+ */
+
 const normalizePem = (pem) =>
     String(pem || '')
         .replace(/\\n/g, '\n')
@@ -55,10 +60,13 @@ export const buildSignContent = (httpMethod, requestPath, clientId, requestTime,
 export const generateAntomSignature = (httpMethod, requestPath, clientId, requestTime, reqBody, privateKey) => {
     const sign = crypto.createSign('RSA-SHA256');
     sign.update(buildSignContent(httpMethod, requestPath, clientId, requestTime, reqBody), 'utf8');
-    return sign.sign({
-        key: formatPrivateKey(privateKey),
-        padding: crypto.constants.RSA_PKCS1_PADDING,
-    }, 'base64');
+    return sign.sign(
+        {
+            key: formatPrivateKey(privateKey),
+            padding: crypto.constants.RSA_PKCS1_PADDING,
+        },
+        'base64'
+    );
 };
 
 export const parseSignatureHeader = (headerValue = '') => {
@@ -81,10 +89,14 @@ export const verifyAntomSignature = ({
     verifier.update(buildSignContent(httpMethod, requestPath, clientId, requestTime, reqBody), 'utf8');
 
     try {
-        return verifier.verify({
-            key: formatPublicKey(publicKey),
-            padding: crypto.constants.RSA_PKCS1_PADDING,
-        }, signature, 'base64');
+        return verifier.verify(
+            {
+                key: formatPublicKey(publicKey),
+                padding: crypto.constants.RSA_PKCS1_PADDING,
+            },
+            signature,
+            'base64'
+        );
     } catch {
         return false;
     }

@@ -1,6 +1,6 @@
 import AppError from '../../utils/AppError.js';
 import { GATEWAYS, PAYMENT_STATUS } from './constants.js';
-import { DEFAULT_CURRENCY, getPaymentReturnUrl, getWebhookUrl, toMinorUnits } from './config.js';
+import { DEFAULT_CURRENCY, getFrontendUrl, getWebhookUrl, splitName, toMinorUnits } from './config.js';
 import {
     generateAntomSignature,
     buildSignatureHeader,
@@ -8,38 +8,65 @@ import {
     verifyAntomSignature,
 } from './antom.crypto.js';
 
-const getClientId = () => process.env.ANTOM_CLIENT_ID;
-const getPrivateKey = () => process.env.ANTOM_PRIVATE_KEY;
-const getPublicKey = () => process.env.ANTOM_PUBLIC_KEY;
-const isSandboxClient = () => String(getClientId() || '').toUpperCase().startsWith('SANDBOX_');
-
-const getOrigin = () =>
-    (process.env.ANTOM_BASE_URL || '')
-        .replace(/\/$/, '')
-        .replace(/\/ams\/(sandbox\/)?api$/i, '');
-
-const getCreatePath = () =>
-    process.env.ANTOM_API_PATH ||
-    (isSandboxClient()
-        ? '/ams/sandbox/api/v1/payments/createPaymentSession'
-        : '/ams/api/v1/payments/createPaymentSession');
-
-const getInquiryPath = () =>
-    process.env.ANTOM_INQUIRY_PATH ||
-    (isSandboxClient()
-        ? '/ams/sandbox/api/v1/payments/inquiryPayment'
-        : '/ams/api/v1/payments/inquiryPayment');
+/*
+ * Same request the live Next.js /api/antom-pay route used:
+ *   POST {ANTOM_BASE_URL}/ams/api/v1/payments/createPaymentSession
+ * Do not switch to /ams/sandbox/api — that creates a session checkout.antom.com immediately expires.
+ */
 
 const FAILED_STATUSES = ['FAIL', 'FAILED', 'CANCELLED', 'CANCELED', 'EXPIRED'];
 
-const isConfigured = () => Boolean(getOrigin() && getClientId() && getPrivateKey());
+const getClientId = () => process.env.ANTOM_CLIENT_ID;
+const getPrivateKey = () => process.env.ANTOM_PRIVATE_KEY;
+const getPublicKey = () => process.env.ANTOM_PUBLIC_KEY;
+
+const getBaseUrl = () =>
+    (process.env.ANTOM_BASE_URL || '').replace(/\/+$/, '').replace(/\/ams\/(sandbox\/)?api$/i, '');
+
+const getCreatePath = () => '/ams/api/v1/payments/createPaymentSession';
+const getInquiryPath = () => '/ams/api/v1/payments/inquiryPayment';
+
+const getCreateEndpoint = () => ({ url: `${getBaseUrl()}${getCreatePath()}`, requestPath: getCreatePath() });
+const getInquiryEndpoint = () => ({ url: `${getBaseUrl()}${getInquiryPath()}`, requestPath: getInquiryPath() });
+
+const isConfigured = () => Boolean(getBaseUrl() && getClientId() && getPrivateKey());
+
+const getPaymentReturnUrl = () => `${getFrontendUrl()}/api/payment-return`;
+
+const pickCheckoutUrl = (result = {}) => {
+    const raw = [result.paymentUrl, result.redirectUrl, result.normalUrl, result.actionForm, result.paymentSessionData?.redirectUrl]
+        .find((value) => typeof value === 'string' && /^https?:\/\//i.test(value));
+    if (!raw) return '';
+    try {
+        const url = new URL(raw);
+        url.searchParams.delete('shadow');
+        return url.toString();
+    } catch {
+        return raw;
+    }
+};
+
+const buildBuyer = ({ orderId, customerEmail, customerName }) => {
+    const { firstName, lastName } = splitName(customerName);
+    return {
+        referenceBuyerId: customerEmail || `GUEST_${orderId}`,
+        ...(customerEmail && { buyerEmail: customerEmail }),
+        ...(customerName && {
+            buyerName: {
+                firstName,
+                lastName,
+                fullName: customerName,
+            },
+        }),
+    };
+};
 
 const mapAntomStatus = (payload = {}) => {
     const paymentStatus = String(payload.paymentStatus || payload.captureStatus || '').toUpperCase();
     const resultStatus = String(payload.result?.resultStatus || payload.paymentResult?.resultStatus || '').toUpperCase();
     const isPaymentNotify = ['PAYMENT_RESULT', 'CAPTURE_RESULT'].includes(payload.notifyType);
 
-    if (paymentStatus === 'SUCCESS') return PAYMENT_STATUS.SUCCESS;
+    if (paymentStatus === 'SUCCESS' || paymentStatus === 'S') return PAYMENT_STATUS.SUCCESS;
     if (FAILED_STATUSES.includes(paymentStatus)) return PAYMENT_STATUS.FAILED;
     if (['PROCESSING', 'PENDING'].includes(paymentStatus)) return PAYMENT_STATUS.PENDING;
 
@@ -51,17 +78,18 @@ const mapAntomStatus = (payload = {}) => {
     return PAYMENT_STATUS.PENDING;
 };
 
-const callAntom = async (requestPath, payload) => {
+const callAntom = async (endpoint, payload) => {
     if (!isConfigured()) {
         throw new AppError(500, 'Antom gateway is not configured');
     }
 
+    const { url, requestPath } = endpoint;
     const clientId = getClientId();
     const requestTime = new Date().toISOString();
     const jsonBody = JSON.stringify(payload);
     const signature = generateAntomSignature('POST', requestPath, clientId, requestTime, jsonBody, getPrivateKey());
 
-    const response = await fetch(`${getOrigin()}${requestPath}`, {
+    const response = await fetch(url, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json; charset=UTF-8',
@@ -90,40 +118,49 @@ const createSession = async ({
     customerName,
 }) => {
     const amountString = String(toMinorUnits(amount));
-    const merchantRegion = String(process.env.ANTOM_MERCHANT_REGION || '').trim();
+    const buyer = buildBuyer({ orderId, customerEmail, customerName });
 
     const payload = {
         productCode: 'CASHIER_PAYMENT',
         productScene: 'CHECKOUT_PAYMENT',
         paymentRequestId: orderId,
-        paymentAmount: { currency: String(currency), value: amountString },
+        is3DSAuthentication: true,
+        paymentAmount: {
+            currency: String(currency),
+            value: amountString,
+        },
         order: {
             referenceOrderId: String(courseId || orderId),
             orderDescription: String(title || 'Course Purchase'),
-            orderAmount: { currency: String(currency), value: amountString },
-            buyer: {
-                referenceBuyerId: customerEmail || `GUEST_${orderId}`,
-                ...(customerEmail && { buyerEmail: customerEmail }),
-                ...(customerName && { buyerName: { fullName: customerName } }),
+            orderAmount: {
+                currency: String(currency),
+                value: amountString,
             },
+            buyer,
         },
-        availablePaymentMethod: { paymentMethodTypeList: [{ paymentMethodType: 'CARD' }] },
-        allowedPaymentMethodRegions: ['GLOBAL'],
-        locale: 'en_US',
-        settlementStrategy: { settlementCurrency: String(currency) },
-        env: { terminalType: 'WEB' },
+        availablePaymentMethod: {
+            paymentMethodTypeList: [
+                { paymentMethodType: 'CARD' },
+                { paymentMethodType: 'GOOGLEPAY', expressCheckout: false },
+                { paymentMethodType: 'APPLEPAY', expressCheckout: false },
+                { paymentMethodType: 'ALIPAY_HK' },
+            ],
+        },
+        buyer,
+        settlementStrategy: {
+            settlementCurrency: String(currency),
+        },
+        env: {
+            terminalType: 'WEB',
+        },
         paymentRedirectUrl: getPaymentReturnUrl(),
         paymentNotifyUrl: getWebhookUrl(GATEWAYS.ANTOM),
-        ...(merchantRegion && { merchantRegion }),
+        passThroughInfo: JSON.stringify({ courseId, customerEmail, customerName }),
     };
 
-    const result = await callAntom(getCreatePath(), payload);
-    const checkoutUrl =
-        result.normalUrl ||
-        result.paymentUrl ||
-        result.redirectUrl ||
-        (typeof result.actionForm === 'string' ? result.actionForm : '') ||
-        result.paymentSessionData?.redirectUrl;
+    const endpoint = getCreateEndpoint();
+    const result = await callAntom(endpoint, payload);
+    const checkoutUrl = pickCheckoutUrl(result);
 
     if (!checkoutUrl) {
         console.error('[Antom] createPaymentSession failed:', JSON.stringify(result));
@@ -131,10 +168,15 @@ const createSession = async ({
     }
 
     console.log(
-        `[Antom] session created path=${getCreatePath()} expiry=${result.paymentSessionExpiryTime || 'n/a'} urlHost=${(() => { try { return new URL(checkoutUrl).host; } catch { return 'invalid-url'; } })()}`
+        `[Antom] session created path=${endpoint.requestPath} expiry=${result.paymentSessionExpiryTime || 'n/a'} urlHost=${(() => {
+            try {
+                return new URL(checkoutUrl).host;
+            } catch {
+                return 'invalid-url';
+            }
+        })()}`
     );
 
-    // paymentSessionId is not a paymentId, so it is not stored for inquiry
     return { checkoutUrl, gatewayPaymentId: '', raw: result };
 };
 
@@ -143,9 +185,7 @@ const inquireStatus = async ({ orderId, gatewayPaymentId }) => {
         ? { paymentId: gatewayPaymentId, paymentRequestId: orderId }
         : { paymentRequestId: orderId };
 
-    const result = await callAntom(getInquiryPath(), payload);
-
-    // resultStatus F on inquiry means the payment does not exist yet
+    const result = await callAntom(getInquiryEndpoint(), payload);
     const status = result?.result?.resultStatus === 'F' ? PAYMENT_STATUS.PENDING : mapAntomStatus(result);
 
     return {
@@ -169,7 +209,8 @@ const verifyWebhook = (req) => {
     const clientId = req.headers['client-id'];
     const requestTime = req.headers['request-time'];
     const signature = parseSignatureHeader(req.headers.signature);
-    const requestPath = process.env.ANTOM_WEBHOOK_PATH || req.originalUrl?.split('?')[0] || '/api/payments/webhook/antom';
+    const requestPath =
+        process.env.ANTOM_WEBHOOK_PATH || req.originalUrl?.split('?')[0] || '/api/payments/webhook/antom';
     const reqBody = req.rawBody || JSON.stringify(req.body || {});
 
     const valid = verifyAntomSignature({
@@ -199,7 +240,7 @@ const parseWebhook = (req) => {
     return {
         orderId: body.paymentRequestId,
         status,
-        proofId: body.paymentId || body.captureId || '',
+        proofId: body.paymentId || body.captureId || body.transactionId || '',
         amount: Number.isFinite(minor) ? minor / 100 : undefined,
         failureReason:
             status === PAYMENT_STATUS.FAILED ? body.result?.resultMessage || body.result?.resultCode || '' : '',

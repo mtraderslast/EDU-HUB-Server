@@ -1,9 +1,40 @@
-import mongoose from "mongoose";
 import AppError from "../../utils/AppError.js";
 import catchAsync from "../../utils/catchAsync.js";
-import { createCourseZodSchema } from "./course.validation.js";
+import { ROLES } from "../../utils/roles.js";
+import { PAYMENT_STATUS } from "../payment-services/constants.js";
+import Enrollment from "../enrollment/enrollment.model.js";
+import { createCourseZodSchema, updateCourseZodSchema } from "./course.validation.js";
 import Course from "./course.model.js";
 
+const hasCourseVideoAccess = async (user, courseId) => {
+    if (!user?.email) {
+        return false;
+    }
+
+    if (user.role === ROLES.ADMIN) {
+        return true;
+    }
+
+    const email = String(user.email).trim();
+    const enrollment = await Enrollment.findOne({
+        courseId: String(courseId),
+        userEmail: { $in: [email, email.toLowerCase()] },
+        paymentStatus: PAYMENT_STATUS.SUCCESS,
+        isAccessGranted: true
+    }).select("_id");
+
+    return Boolean(enrollment);
+};
+
+const toCoursePayload = (course, includeVideoUrl) => {
+    const data = typeof course.toObject === "function" ? course.toObject() : { ...course };
+
+    if (!includeVideoUrl) {
+        delete data.videoUrl;
+    }
+
+    return data;
+};
 
 export const createCourse = catchAsync(async (req, res) => {
     const body = req.body;
@@ -89,10 +120,34 @@ export const getCourseById = catchAsync(async (req, res) => {
         throw new AppError(404, 'Course not found with the provided ID');
     }
 
+    const includeVideoUrl = await hasCourseVideoAccess(req.user, course._id);
+
     return res.status(200).json({
         success: true,
         message: 'Course details retrieved successfully',
-        data: course
+        data: toCoursePayload(course, includeVideoUrl)
+    });
+});
+
+export const getEnrolledCourseContent = catchAsync(async (req, res) => {
+    const { id } = req.params;
+
+    const course = await Course.findById(id);
+
+    if (!course) {
+        throw new AppError(404, 'Course not found with the provided ID');
+    }
+
+    const includeVideoUrl = await hasCourseVideoAccess(req.user, course._id);
+
+    if (!includeVideoUrl) {
+        throw new AppError(403, 'Enroll in this course to access the video');
+    }
+
+    return res.status(200).json({
+        success: true,
+        message: 'Course content retrieved successfully',
+        data: toCoursePayload(course, true)
     });
 });
 
@@ -105,9 +160,19 @@ export const updateCourse = catchAsync(async (req, res) => {
         throw new AppError(404, 'Course not found to update');
     }
 
+    const parsed = updateCourseZodSchema.safeParse(body);
+
+    if (!parsed.success) {
+        throw new AppError(400, `Validation failed: ${parsed.error.issues[0]?.message || 'Invalid input'}`);
+    }
+
+    const updates = Object.fromEntries(
+        Object.entries(parsed.data).filter(([key]) => Object.prototype.hasOwnProperty.call(body, key))
+    );
+
     const updatedCourse = await Course.findByIdAndUpdate(
         id,
-        { $set: body },
+        { $set: updates },
         { new: true, runValidators: true }
     );
 
