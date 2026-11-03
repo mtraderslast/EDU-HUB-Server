@@ -161,11 +161,15 @@ const createSession = async ({
         result['redirect-url'] || result['redirect-to'] || result.redirectUrl || result.redirect_url;
 
     if (!checkoutUrl) {
+        const gatewayMessage = result['error-message'] || result.error || result['error_message'] || '';
         console.error('[Centiwise] sale-form failed:', JSON.stringify(result));
-        if (result['error-message'] === 'INVALID_CONTROL_CODE') {
-            console.error('[Centiwise] Check CENTIWISE_ENDPOINT_ID and CENTIWISE_MERCHANT_CONTROL in .env (copy them from the Centiwise dashboard).');
+        if (gatewayMessage === 'INVALID_CONTROL_CODE') {
+            throw new AppError(
+                502,
+                'Centiwise rejected the credentials. On the live server use Endpoint ID 107334, login MTraders_cw, and the Control Key from the email — not the dashboard password.'
+            );
         }
-        throw new AppError(502, result['error-message'] || 'Centiwise payment session creation failed');
+        throw new AppError(502, gatewayMessage || 'Centiwise payment session creation failed');
     }
 
     return {

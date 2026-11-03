@@ -157,7 +157,13 @@ export const initiatePayment = catchAsync(async (req, res) => {
 
         if (error.statusCode && error.statusCode < 500) throw error;
         console.error(`[Payment] ${gateway.name} session failed for ${orderId}:`, error.message);
-        throw new AppError(502, 'We could not start the payment right now. Please try again later.');
+        const gatewayMessage = String(error.message || '').trim();
+        throw new AppError(
+            502,
+            gatewayMessage && gatewayMessage.length <= 180
+                ? gatewayMessage
+                : 'We could not start the payment right now. Please try again later.'
+        );
     }
 });
 
