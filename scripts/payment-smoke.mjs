@@ -18,6 +18,10 @@ Object.assign(process.env, {
     CENTIWISE_ENDPOINT_ID: '107334',
     CENTIWISE_LOGIN: 'test_login',
     CENTIWISE_MERCHANT_CONTROL: 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
+    DODO_PAYMENTS_ENV: 'test_mode',
+    DODO_PAYMENTS_API_KEY: 'dodo_test_smoke',
+    DODO_PAYMENTS_WEBHOOK_KEY: `whsec_${Buffer.from('dodo-webhook-secret-key!!').toString('base64')}`,
+    DODO_PAYMENTS_PRODUCT_ID: 'pdt_0Ns0OAlaerctuPzSbnarI',
 });
 
 const sha1 = (v) => crypto.createHash('sha1').update(v).digest('hex');
@@ -91,7 +95,7 @@ console.log('Payment smoke test');
 await test('GET /api/payments/active-gateway lists both gateways', async () => {
     const r = await (await realFetch(`${base}/api/payments/active-gateway`)).json();
     assert.equal(r.activeGateway, 'ANTOM');
-    assert.deepEqual(r.availableGateways.sort(), ['ANTOM', 'CENTIWISE']);
+    assert.deepEqual(r.availableGateways.sort(), ['ANTOM', 'CENTIWISE', 'DODO']);
 });
 
 const adminCall = (method, path, role, body) =>
@@ -111,6 +115,7 @@ await test('admin gateway list: 401 guest, 403 user, 200 admin with configured f
     assert.deepEqual(data.gateways.map((g) => [g.name, g.label, g.configured]), [
         ['ANTOM', 'Antom', true],
         ['CENTIWISE', 'Centiwise', true],
+        ['DODO', 'Dodo Payments', true],
     ]);
 });
 
@@ -235,8 +240,8 @@ await test('initiate (CENTIWISE): form body + control hash', async () => {
     assert.equal(f.amount, '20.00');
     assert.equal(f.control, sha1(`107334${cwOrder}2000cw@example.comAAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE`));
     assert.equal(f.server_callback_url, 'https://server.example.com/api/payments/webhook/centiwise');
-    assert.equal(f.redirect_success_url, 'http://localhost:3000/payment-success');
-    assert.equal(f.redirect_fail_url, 'http://localhost:3000/payment-failed');
+    assert.equal(f.redirect_success_url, `http://localhost:3000/payment-success?orderId=${encodeURIComponent(cwOrder)}`);
+    assert.equal(f.redirect_fail_url, `http://localhost:3000/payment-failed?orderId=${encodeURIComponent(cwOrder)}`);
 });
 
 await test('Centiwise callback with bad control -> 401', async () => {
@@ -281,6 +286,110 @@ await test('status endpoint: pending order is re-checked with the gateway (Antom
 await test('status endpoint: unknown order -> 404', async () => {
     const res = await realFetch(`${base}/api/payments/status/NOPE`);
     assert.equal(res.status, 404);
+});
+
+const dodoWebhookHeaders = (body) => {
+    const webhookId = `msg_${crypto.randomBytes(6).toString('hex')}`;
+    const webhookTimestamp = String(Math.floor(Date.now() / 1000));
+    const secret = process.env.DODO_PAYMENTS_WEBHOOK_KEY;
+    const key = Buffer.from(secret.startsWith('whsec_') ? secret.slice(6) : secret, 'base64');
+    const signature = crypto
+        .createHmac('sha256', key)
+        .update(`${webhookId}.${webhookTimestamp}.${body}`)
+        .digest('base64');
+    return {
+        'webhook-id': webhookId,
+        'webhook-timestamp': webhookTimestamp,
+        'webhook-signature': `v1,${signature}`,
+    };
+};
+
+let dodoOrder;
+await test('initiate (DODO): checkout session with PWYW amount in cents', async () => {
+    const switched = await adminCall('PATCH', '/api/payments/admin/switch-gateway', 'admin', { gateway: 'DODO' });
+    assert.equal(switched.status, 200, await switched.text());
+    gatewayReply = () => ({
+        session_id: 'cks_test_1',
+        checkout_url: 'https://test.checkout.dodopayments.com/session/cks_test_1',
+    });
+    const res = await post('/api/payments/initiate', {
+        courseId: COURSE_ID,
+        customerEmail: 'dodo@example.com',
+        customerName: 'Dodo User',
+        amount: 20,
+    });
+    const data = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(data));
+    assert.equal(data.gateway, 'DODO');
+    assert.equal(data.checkoutUrl, 'https://test.checkout.dodopayments.com/session/cks_test_1');
+    dodoOrder = data.orderId;
+    assert.equal(store.get(dodoOrder).gatewayPaymentId, 'cks_test_1');
+
+    const call = outgoing.at(-1);
+    assert.equal(call.url, 'https://test.dodopayments.com/checkouts');
+    assert.equal(call.init.headers.Authorization, 'Bearer dodo_test_smoke');
+    const sent = JSON.parse(call.init.body);
+    assert.deepEqual(sent.product_cart, [
+        { product_id: 'pdt_0Ns0OAlaerctuPzSbnarI', quantity: 1, amount: 2000 },
+    ]);
+    assert.equal(sent.customer.email, 'dodo@example.com');
+    assert.equal(sent.metadata.orderId, dodoOrder);
+    assert.equal(sent.return_url, `http://localhost:3000/payment-success?orderId=${encodeURIComponent(dodoOrder)}`);
+    assert.equal(sent.feature_flags.redirect_immediately, true);
+});
+
+await test('Dodo webhook with BAD signature -> 401, order untouched', async () => {
+    const body = JSON.stringify({
+        type: 'payment.succeeded',
+        data: { payment_id: 'pay_1', amount: 2000, metadata: { orderId: dodoOrder } },
+    });
+    const res = await post('/api/payments/webhook/dodo', body, {
+        'webhook-id': 'msg_bad',
+        'webhook-timestamp': String(Math.floor(Date.now() / 1000)),
+        'webhook-signature': 'v1,AAAA',
+    });
+    assert.equal(res.status, 401);
+    assert.equal(store.get(dodoOrder).paymentStatus, 'PENDING');
+});
+
+await test('Dodo webhook payment.succeeded -> SUCCESS + ack', async () => {
+    const body = JSON.stringify({
+        type: 'payment.succeeded',
+        data: {
+            payload_type: 'Payment',
+            payment_id: 'pay_1',
+            amount: 2000,
+            status: 'succeeded',
+            metadata: { orderId: dodoOrder },
+        },
+    });
+    const res = await post('/api/payments/webhook/dodo', body, dodoWebhookHeaders(body));
+    const ack = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(ack.received, true);
+    const doc = store.get(dodoOrder);
+    assert.equal(doc.paymentStatus, 'SUCCESS');
+    assert.equal(doc.isAccessGranted, true);
+    assert.equal(doc.proofId, 'pay_1');
+});
+
+await test('status endpoint: pending Dodo order is re-checked with checkout session', async () => {
+    gatewayReply = () => ({
+        session_id: 'cks_poll',
+        checkout_url: 'https://test.checkout.dodopayments.com/session/cks_poll',
+    });
+    const d = await (await post('/api/payments/initiate', {
+        courseId: COURSE_ID,
+        customerEmail: 'dodopoll@example.com',
+        amount: 5,
+    })).json();
+    gatewayReply = (url) =>
+        url.includes('/checkouts/cks_poll')
+            ? { id: 'cks_poll', payment_id: 'pay_77', payment_status: 'succeeded' }
+            : {};
+    const r = await (await realFetch(`${base}/api/payments/status/${d.orderId}`)).json();
+    assert.equal(r.data.paymentStatus, 'SUCCESS');
+    assert.equal(r.data.isAccessGranted, true);
 });
 
 await test('invalid input rejected (bad course / email / amount)', async () => {

@@ -11,6 +11,7 @@ import {
 } from './gatewayRegistry.js';
 import { antomGateway } from './antom.service.js';
 import { centiwiseGateway } from './centiwise.service.js';
+import { dodoGateway } from './dodo.service.js';
 
 /*
  * A gateway strategy exposes: name, label, isConfigured(), createSession(), inquireStatus(),
@@ -18,6 +19,7 @@ import { centiwiseGateway } from './centiwise.service.js';
  */
 registerGateway(antomGateway);
 registerGateway(centiwiseGateway);
+registerGateway(dodoGateway);
 
 const AMOUNT_TOLERANCE = 0.01;
 
