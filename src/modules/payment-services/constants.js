@@ -1,6 +1,7 @@
 export const GATEWAYS = Object.freeze({
     ANTOM: 'ANTOM',
     CENTIWISE: 'CENTIWISE',
+    DODO: 'DODO',
     STRIPE: 'STRIPE',
     WHOPE: 'WHOPE',
 });

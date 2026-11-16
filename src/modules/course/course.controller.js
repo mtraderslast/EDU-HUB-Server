@@ -215,6 +215,10 @@ export const getMyCourses = catchAsync(async (req, res) => {
 export const getCourseById = catchAsync(async (req, res) => {
     const { id } = req.params;
 
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new AppError(404, 'Course not found with the provided ID');
+    }
+
     const course = await Course.findById(id);
 
     if (!course) {
@@ -232,6 +236,10 @@ export const getCourseById = catchAsync(async (req, res) => {
 
 export const getEnrolledCourseContent = catchAsync(async (req, res) => {
     const { id } = req.params;
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new AppError(404, 'Course not found with the provided ID');
+    }
 
     const course = await Course.findById(id);
 
